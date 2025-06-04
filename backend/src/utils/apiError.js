@@ -1,5 +1,5 @@
 class apiError extends Error{
-    constructor(data=null, errors=[], statusCode, message='There was some error'){
+    constructor(statusCode, message='There was some error', data=null, errors=[]){
         super(message);
         this.success = false;
         this.data = data;
@@ -9,4 +9,4 @@ class apiError extends Error{
     }
 }
 
-export default apiError;
+export {apiError};

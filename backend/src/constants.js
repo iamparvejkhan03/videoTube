@@ -1,3 +1,3 @@
-const DATABASE_NAME = '/videoTube';
+const DATABASE_NAME = 'videoTube';
 
 export {DATABASE_NAME}

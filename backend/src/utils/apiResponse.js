@@ -1,5 +1,5 @@
 class apiResponse{
-    constructor(data, message='api successfull', statusCode  ){
+    constructor(statusCode, message='api successfull', data  ){
         this.success=true;
         this.data=data;
         this.message=message;
@@ -7,4 +7,4 @@ class apiResponse{
     }
 }
 
-export default apiResponse;
+export {apiResponse};

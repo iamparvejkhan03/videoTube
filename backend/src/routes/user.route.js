@@ -1,8 +1,19 @@
 import { Router } from "express"
-import { registerUser } from "../controllers/user.controller.js";
+import { loginUser, logOutUser, refreshAccessToken, registerUser } from "../controllers/user.controller.js";
+import {upload} from '../middlewares/multer.middleware.js';
+import { verifyJWT } from "../middlewares/auth.middleware.js";
 
 const userRouter = Router();
 
-userRouter.get('/', registerUser);
+userRouter.post('/register', upload.fields([
+    {name: 'avatar', maxCount:1},
+    {name: 'coverImage', maxCount:1}
+]), registerUser);
 
-export default userRouter;
+userRouter.post('/login', upload.none(), loginUser);
+
+userRouter.post('/logout', verifyJWT, logOutUser);
+
+userRouter.post('/refresh-token', refreshAccessToken);
+
+export default userRouter; 
