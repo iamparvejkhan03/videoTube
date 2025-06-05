@@ -4,6 +4,7 @@ import User from '../models/user.model.js';
 import {uploadOnCloudinary} from '../utils/cloudinary.js';
 import {apiResponse} from '../utils/apiResponse.js';
 import jwt from 'jsonwebtoken';
+import mongoose, { Schema } from 'mongoose';
 
 const registerUser = asyncHandler(async (req, res) => {
     //Here the res and req are parameters intially and they are coming from the asyncHandler's function
@@ -104,7 +105,7 @@ const loginUser = asyncHandler(async (req, res) => {
 })
 
 const logOutUser = asyncHandler(async (req, res) => {
-    const user = await User.findByIdAndUpdate(req.user._id, {refreshToken: undefined}, {new:true});
+    const user = await User.findByIdAndUpdate(req.user._id, {refreshToken: ""}, {new:true});
 
     const options = {
         httpOnly:true,
@@ -143,4 +144,223 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     res.status(200).cookie('accessToken', accessToken, options).cookie('refreshToken', newRefreshToken, options).json(new apiResponse(200, 'Access token refreshed.', {accessToken, newRefreshToken}));
 })
 
-export {registerUser, loginUser, logOutUser, refreshAccessToken}
+const updateUserPassword = asyncHandler(async (req, res) => {
+    const {oldPassword, newPassword} = req.body;
+
+    if(!oldPassword || !newPassword){
+        throw new apiError(400, 'Old and new both passwords are required.');
+    }
+
+    const user = req.user;
+
+    if(!user){
+        throw new apiError(400, 'There was some error in fetching the user in the update password.');
+    }
+
+    const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
+
+    if(!isPasswordCorrect){
+        throw new apiError(400, 'Old password is wrong and does not match the one in the database.');
+    }
+
+    user.password = newPassword;
+    await user.save({validateBeforeSave:false});
+
+    res.status(200).json(new apiResponse(200, 'Password has been updated successfully.'));
+
+})
+
+const updateUserDetails = asyncHandler(async (req, res) => {
+    const user = req.user;
+
+    if(!user){
+        throw new apiError(400, 'User was not attached to req.user.');
+    }
+
+    const {username, email} = req.body;
+
+    if(!(username || email)){
+        throw new apiError(400, 'Username and email are requied.');
+    }
+
+    user.username = username;
+    user.email = email;
+
+    await user.save({validateBeforeSave:false});
+
+    res.status(200).json(new apiResponse(200, 'Username and email updated successfully.'));
+})
+
+const updateUserAvatar = asyncHandler(async (req, res) => {
+    const avatarLocalPath = req.file?.path;
+
+    if(!avatarLocalPath){
+        throw new apiError(404, 'Avatar not uploaded.');
+    }
+
+    const avatarUrl = await uploadOnCloudinary(avatarLocalPath);
+
+    if(!avatarUrl){
+        throw new apiError(500, 'Could not upload the image on cloudinary.');
+    }
+
+    const user = req.user;
+
+    if(!user){
+        throw new apiError(404, 'User was not attached in the request.');
+    }
+
+    user.avatar = avatarUrl.secure_url;
+    await user.save({validateBeforeSave:false});
+
+    res.status(200).json(new apiResponse(200, 'Avatar updated successfully.'));
+})
+
+const updateUserCoverImage = asyncHandler(async (req, res) => {
+    const coverImageLocalPath = req.file?.path;
+
+    if(!coverImageLocalPath){
+        throw new apiError(404, 'CoverImage not uploaded.');
+    }
+
+    const coverImageUrl = await uploadOnCloudinary(coverImageLocalPath);
+
+    if(!coverImageUrl){
+        throw new apiError(500, 'Could not upload the cover image on cloudinary.');
+    }
+
+    const user = req.user;
+
+    if(!user){
+        throw new apiError(404, 'User was not attached in the request.');
+    }
+
+    user.coverImage = coverImageUrl.secure_url;
+    await user.save({validateBeforeSave:false});
+
+    res.status(200).json(new apiResponse(200, 'CoverImage updated successfully.'));
+})
+
+const getCurrentUser = asyncHandler(async (req, res) => {
+    const user = req.user;
+
+    if(!user){
+        throw new apiError(500, 'There was some error getting the current error/');
+    }
+
+    res.status(200).json(new apiResponse(200, 'Current user fetched.', user));
+})
+
+const getChannelProfileData = asyncHandler(async (req, res) => {
+    const {username} = req.params;
+    const userId = new mongoose.Types.ObjectId(req.user._id);
+    
+
+    const channelProfileData = await User.aggregate([
+        {
+            $match: {
+                username: username?.toLowerCase()
+            }
+        },
+        {
+            $lookup: {
+                from: "subscriptions",
+                localField: "_id",
+                foreignField: "channel",
+                as: "allSubscriptions"
+            }
+        },
+        {
+            $lookup: {
+                from: "subscriptions",
+                localField: "_id",
+                foreignField: "subscriber",
+                as: "subscribedTo"
+            }
+        },
+        {
+            $addFields: {
+                subscribersCount: {
+                    $size: "$allSubscriptions"
+                },
+                subscribedToCount: {
+                    $size: "$subscribedTo"
+                },
+                isSubscribed: {
+                    $cond: {
+                        if: {$in: [userId, '$allSubscriptions.subscriber']},
+                        then: true,
+                        else: false
+                    }
+                }
+            }
+        },
+        {
+            $project: {
+                username:1, email:1, fullName:1, avatar:1, coverImage:1, subscribersCount:1, subscribedToCount:1, isSubscribed:1
+            }
+        }
+    ]);
+
+    // console.log(channelProfileData);
+
+    if(!channelProfileData?.length){
+        throw new apiError(400, 'Channel data not recieved.');
+    }
+
+    res.status(200).json(new apiResponse(200, 'Channel data received.', channelProfileData));
+})
+
+const getUsersWatchHistory = asyncHandler(async (req, res) => {
+    const userId = new mongoose.Types.ObjectId(req.user._id);
+
+    const user = await User.aggregate([
+        {
+            $match: {_id: userId}
+        },
+        {
+            $lookup: {
+                from: "videos",
+                localField: "watchHistory",
+                foreignField: "_id",
+                as: "watchHistory",
+                pipeline: [
+                    {
+                        $lookup: {
+                            from: 'users',
+                            localField: 'owner',
+                            foreignField: '_id',
+                            as: 'owner', 
+                            pipeline: [
+                                {
+                                    $project: {
+                                        username:1,
+                                        fullName:1,
+                                        avatar:1
+                                    }
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        $addFields: {
+                            owner: {
+                                $first: '$owner'
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ]);
+
+    // console.log(user);
+
+    if(!user){
+        throw new apiError(500, 'Error while getting the watch history.');
+    }
+
+    res.status(200).json(new apiResponse(200, 'Watch history fetched.', user[0].watchHistory));
+})
+
+export {registerUser, loginUser, logOutUser, refreshAccessToken, updateUserPassword, updateUserDetails, updateUserAvatar, updateUserCoverImage, getCurrentUser, getChannelProfileData, getUsersWatchHistory}
