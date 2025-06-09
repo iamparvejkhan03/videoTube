@@ -9,14 +9,18 @@ const likeSchema = new Schema({
         type: Schema.Types.ObjectId,
         ref: 'Video'
     },
-    comment: {
-        type: Schema.Types.ObjectId,
-        ref: 'Comment'
-    },
-    tweet: {
-        type: Schema.Types.ObjectId,
-        ref: 'Tweet'
-    }
+    comments: [
+        {
+            type: Schema.Types.ObjectId,
+            ref: 'Comment'
+        }
+    ],
+    tweets: [
+        {
+            type: Schema.Types.ObjectId,
+            ref: 'Tweet'
+        }
+    ]
 }, {timestamps:true});
 
 export const Like = mongoose.model('Like', likeSchema);
